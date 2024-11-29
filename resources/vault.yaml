@@ -1,0 +1,243 @@
+---
+- name: Install and Configure HashiCorp Vault and Consul with TLS (Standalone Consul Mode)
+  hosts: all
+  gather_facts: yes
+  become: true
+  serial: 1
+
+  vars:
+    vault_version: "1.18.0"
+    consul_version: "1.14.0"
+    vault_install_path: "/usr/local/bin/vault"
+    consul_install_path: "/usr/local/bin/consul"
+    vault_conf_path: "/etc/vault.d/vault.hcl"
+    vault_data_dir: "/opt/vault/data"
+    consul_conf_path: "/etc/consul.d/consul.hcl"
+    consul_data_dir: "/opt/consul/data"
+    certs_dir: "/etc/ssl/certs"
+    vault_unseal_key_path: "/opt/consul/vault-unseal-key"
+    vault_token_storage_path: "/opt/consul/vault-token-storage"
+
+  tasks:
+    - name: Ensure unzip is installed (Debian)
+      apt:
+        name: unzip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure unzip is installed (RedHat)
+      yum:
+        name: unzip
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Download Vault
+      get_url:
+        url: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+        dest: /tmp/vault.zip
+        mode: '0644'
+
+    - name: Unzip Vault
+      unarchive:
+        src: /tmp/vault.zip
+        dest: /usr/local/bin
+        remote_src: yes
+
+    - name: Verify Vault installation
+      command: "{{ vault_install_path }} --version"
+      register: vault_version_output
+
+    - name: Print Vault version
+      debug:
+        msg: "Vault version: {{ vault_version_output.stdout }}"
+
+    - name: Download Consul
+      get_url:
+        url: "https://releases.hashicorp.com/consul/{{ consul_version }}/consul_{{ consul_version }}_linux_amd64.zip"
+        dest: /tmp/consul.zip
+        mode: '0644'
+
+    - name: Unzip Consul
+      unarchive:
+        src: /tmp/consul.zip
+        dest: /usr/local/bin
+        remote_src: yes
+
+    - name: Verify Consul installation
+      command: "{{ consul_install_path }} --version"
+      register: consul_version_output
+
+    - name: Print Consul version
+      debug:
+        msg: "Consul version: {{ consul_version_output.stdout }}"
+
+    - name: Ensure OpenSSL is installed (Debian)
+      apt:
+        name: openssl
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure OpenSSL is installed (RedHat)
+      yum:
+        name: openssl
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Create a directory for certificates
+      file:
+        path: "{{ certs_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Generate a private key for the CA
+      command: "openssl genpkey -algorithm RSA -out {{ certs_dir }}/ca-key.pem -pkeyopt rsa_keygen_bits:2048"
+      args:
+        creates: "{{ certs_dir }}/ca-key.pem"
+
+    - name: Create a self-signed CA certificate
+      command: "openssl req -x509 -new -nodes -key {{ certs_dir }}/ca-key.pem -sha256 -days 365 -out {{ certs_dir }}/ca-cert.pem -subj '/CN=Consul-CA'"
+      args:
+        creates: "{{ certs_dir }}/ca-cert.pem"
+
+    - name: Generate a private key for Consul
+      command: "openssl genpkey -algorithm RSA -out {{ certs_dir }}/consul-key.pem -pkeyopt rsa_keygen_bits:2048"
+      args:
+        creates: "{{ certs_dir }}/consul-key.pem"
+
+    - name: Create a CSR for Consul with IP SANs
+      command: "openssl req -new -key {{ certs_dir }}/consul-key.pem -out {{ certs_dir }}/consul.csr -subj '/CN=consul'"
+      args:
+        creates: "{{ certs_dir }}/consul.csr"
+
+    - name: Sign the Consul CSR with the CA
+      command: "openssl x509 -req -in {{ certs_dir }}/consul.csr -CA {{ certs_dir }}/ca-cert.pem -CAkey {{ certs_dir }}/ca-key.pem -CAcreateserial -out {{ certs_dir }}/consul-cert.pem -days 365 -sha256"
+      args:
+        creates: "{{ certs_dir }}/consul-cert.pem"
+
+    - name: Ensure the permissions are correct on the certs directory
+      file:
+        path: "{{ certs_dir }}"
+        mode: '0770'
+        recurse: yes
+
+    - name: Ensure Consul configuration directory exists
+      file:
+        path: "/etc/consul.d"
+        state: directory
+
+    - name: Create Consul configuration file with TLS settings
+      copy:
+        dest: "{{ consul_conf_path }}"
+        content: |
+          datacenter = "dc1"
+          data_dir = "{{ consul_data_dir }}"
+          log_level = "INFO"
+          node_name = "consul-node"
+
+          # Network configurations
+          bind_addr = "0.0.0.0"
+          client_addr = "0.0.0.0"
+
+          # Server settings
+          server = true
+          ui = true
+          bootstrap_expect = 1  # Single node configuration
+
+          # Ports configuration
+          ports {
+            http = 8500
+          }
+
+          # TLS Configuration
+          verify_incoming = true
+          verify_outgoing = true
+          ca_file = "{{ certs_dir }}/ca-cert.pem"
+          cert_file = "{{ certs_dir }}/consul-cert.pem"
+          key_file = "{{ certs_dir }}/consul-key.pem"
+
+          # Enable Consul's HTTP API over TLS
+          verify_server_hostname = true  # Verifies the server’s hostname against the certificate
+
+      notify:
+        - Restart Consul
+
+    - name: Create systemd service file for Consul
+      copy:
+        dest: /etc/systemd/system/consul.service
+        content: |
+          [Unit]
+          Description=Consul
+          Documentation=https://www.consul.io/docs/
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/consul agent -config-file={{ consul_conf_path }}
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      command: sudo systemctl daemon-reload
+
+    - name: Enable and start Consul service
+      command: sudo systemctl enable consul
+
+    - name: Start the consul
+      command: sudo systemctl start consul
+
+    - name: Create Vault data directory
+      file:
+        path: "{{ vault_data_dir }}"
+        state: directory
+
+    - name: Ensure Vault configuration directory exists
+      file:
+        path: "/etc/vault.d"
+        state: directory
+
+    - name: Configure Vault
+      copy:
+        dest: "{{ vault_conf_path }}"
+        content: |
+          storage "file" {
+            path = "{{ vault_data_dir }}"
+          }
+
+          listener "tcp" {
+            address = "0.0.0.0:8200"
+            tls_cert_file = "{{ certs_dir }}/consul-cert.pem"
+            tls_key_file = "{{ certs_dir }}/consul-key.pem"
+          }
+          ui = true 
+
+    - name: Create systemd service file for Vault
+      copy:
+        dest: /etc/systemd/system/vault.service
+        content: |
+          [Unit]
+          Description=HashiCorp Vault
+          Documentation=https://www.vaultproject.io/docs/
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/vault server -config={{ vault_conf_path }}
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      command: sudo systemctl daemon-reload
+
+    - name: Enable and start Vault service
+      command: sudo systemctl enable vault
+
+    - name: Start the Vault service
+      command: sudo systemctl start vault
+
+  handlers:
+    - name: Restart Consul
+      systemd:
+        name: consul
+        state: restarted
