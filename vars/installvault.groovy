@@ -1,6 +1,6 @@
 def call() {
     ansiblePlaybook(
-                        credentialsId: '8d996de9-8b5a-4483-8b1a-4805fa3933df', 
+                        credentialsId: 'f4fcd509-ca78-47b4-9610-c54171fda58b', 
                         disableHostKeyChecking: true,
                         installation: 'Ansible', 
                         inventory: 'resources/aws_ec2.yaml',
