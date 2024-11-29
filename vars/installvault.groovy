@@ -1,10 +1,10 @@
 def call() {
     ansiblePlaybook(
-                        credentialsId: '1dfb88aa-b117-42bf-a70a-12e98a81d7d1',
+                        credentialsId: 'f4fcd509-ca78-47b4-9610-c54171fda58b', 
                         disableHostKeyChecking: true,
-                        installation: 'ansible',
+                        installation: 'Ansible', 
                         inventory: '/resources/aws_ec2.yaml',
-                        playbook: '/resources/vault.yaml',
+                        playbook: '/resources/vault.yaml', 
                         vaultTmpPath: ''
                     )
 
