@@ -1,3 +1,7 @@
-def call(String repoUrl, String branch = 'main') {
-    sh "git clone -b ${branch} ${repoUrl} workspace"
+def call() {
+    // Clean the workspace to avoid conflicts
+    deleteDir()
+    
+    // Clone the repository
+    git branch: 'main', url: 'https://github.com/mohitmaikhuri03/DEMO.git'
 }
