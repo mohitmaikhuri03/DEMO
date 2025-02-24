@@ -1,1 +1,1 @@
-# DEMO
+# DEMO for notifications
