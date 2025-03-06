@@ -1,4 +1,4 @@
-# README.md: OTMS Application Architecture
+#  OT- MS Application Architecture
 
 ## Overview
 
@@ -6,7 +6,8 @@ This document provides a detailed overview of the architecture for the OTMS (Onl
 
 ## Architecture Diagram
 
-(The architecture diagram from the images should be embedded here. Since I cannot directly embed the image, assume the diagrams from the image URLs `https://pplx-res.cloudinary.com/image/upload/v1741263267/user_uploads/IdcxliaMiicHHpn/image.jpg` and `https://pplx-res.cloudinary.com/image/upload/v1741263267/user_uploads/ByckzmnbJBGfNUU/image.jpg` are visually represented in this section.)
+![image](https://github.com/user-attachments/assets/fc133d48-5660-4224-8d2b-3d0d1d4d9266)
+
 
 ## Workflow
 
